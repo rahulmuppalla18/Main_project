@@ -1,0 +1,32 @@
+/* simple global styles – Tailwind classes do most of the work */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background-color: #f1f5f9; /* slate-100 */
+  color: #0f172a; /* slate-900 */
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+/* fade-in + lift animation for cards */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* apply animation and ensure it stays visible after running */
+.animate-fade-in {
+  animation: fadeIn 420ms cubic-bezier(.2,.9,.2,1) both;
+}
+
