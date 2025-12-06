@@ -1,19 +1,26 @@
 import React, { useEffect, useMemo, useState } from "react";
-import axios from "axios";
+import api from "../api";
 import { useParams, useNavigate } from "react-router-dom";
+import AvailabilityManager from "../Components/AvailabilityManager";
 
 /**
- * Booking page (complete)
- * - Reads selected service id from route param or localStorage
- * - Fetches service details (with demo fallback)
- * - Booking form (date, time slot, contact) with validation
- * - POSTs to /bookings and redirects to confirmation page on success
+ * Booking page with availability + slot-locking integrated.
+ *
+ * - Shows service details (fetches by id or localStorage)
+ * - User can "Check availability" (opens AvailabilityManager)
+ * - AvailabilityManager returns { slot, lock } via onLock
+ * - Booking payload includes lock.lockToken so backend can finalize booking
+ *
+ * NOTE: Availability endpoints must exist:
+ *  GET  /provider/:providerId/availability?serviceId=
+ *  POST /provider/slots/lock  { slotId, serviceId }  => returns { lockToken, expiresAt, ... }
+ * If your API fields differ, change `lock.lockToken` usage below.
  */
 
-// Demo fallbacks
+// demo services fallback
 const demoServices = [
-  { _id: "demo-1", title: "Basic Plumbing Repair", description: "Fix leaking taps, unclog drains, replace washers.", price: 499, providerName: "AquaFix Pros", category: "Plumbing", image: "https://images.unsplash.com/photo-1581578017424-2c1f0f0b8b5b?auto=format&fit=crop&w=900&q=60", duration: "30–60 mins" },
-  { _id: "demo-2", title: "AC Service & Gas Top-up", description: "Full AC cleaning, cooling check and gas refill.", price: 999, providerName: "CoolCare", category: "AC Repair", image: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=900&q=60", duration: "1–2 hours" },
+  { _id: "demo-1", title: "Basic Plumbing Repair", description: "Fix leaking taps, unclog drains, replace washers.", price: 499, providerName: "AquaFix Pros", providerId: "prov-1", category: "Plumbing", image: "https://images.unsplash.com/photo-1581578017424-2c1f0f0b8b5b?auto=format&fit=crop&w=900&q=60", duration: "30–60 mins" },
+  { _id: "demo-2", title: "AC Service & Gas Top-up", description: "Full AC cleaning", price: 999, providerName: "CoolCare", providerId: "prov-2", category: "AC Repair", image: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=900&q=60", duration: "1–2 hours" }
 ];
 
 function isoDateTodayPlus(days = 0) {
@@ -23,7 +30,7 @@ function isoDateTodayPlus(days = 0) {
 }
 
 export default function Booking() {
-  const { serviceId: paramServiceId } = useParams(); // optional route param
+  const { serviceId: paramServiceId } = useParams();
   const navigate = useNavigate();
 
   const [service, setService] = useState(null);
@@ -37,17 +44,21 @@ export default function Booking() {
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
 
+  // availability / lock
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
+  const [lockedSlot, setLockedSlot] = useState(null); // { slot, lock }
+  const [lockInfo, setLockInfo] = useState(null); // convenience pointer to lock object
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  // time slots (placeholder; replace with provider availability later)
   const slots = [
     "08:00", "09:00", "10:00", "11:00", "12:00",
     "14:00", "15:00", "16:00", "17:00", "18:00"
   ];
 
-  // Prefill contact from localStorage for convenience
+  // prefill contact
   useEffect(() => {
     const savedName = localStorage.getItem("user_name");
     const savedPhone = localStorage.getItem("user_phone");
@@ -57,28 +68,26 @@ export default function Booking() {
     if (savedEmail) setEmail(savedEmail);
   }, []);
 
-  // Fetch service details
+  // fetch service details
   useEffect(() => {
     let mounted = true;
     setLoadingService(true);
 
     const savedId = paramServiceId || localStorage.getItem("ls_selected_service");
     if (!savedId) {
-      // fallback to demo first item
       setService(demoServices[0]);
       setLoadingService(false);
       return;
     }
 
-    // try to fetch specific service
-    axios.get(`http://localhost:5000/services/${savedId}`)
+    api.get(`/services/${savedId}`)
       .then(res => {
         if (!mounted) return;
         if (res?.data && Object.keys(res.data).length > 0) {
           setService(res.data);
         } else {
-          // if empty, fetch all and find by id
-          return axios.get("http://localhost:5000/services");
+          // fallback: fetch all and find
+          return api.get("/services");
         }
       })
       .then(res2 => {
@@ -111,64 +120,76 @@ export default function Booking() {
     return "";
   };
 
+  // handle lock set by AvailabilityManager
+  const handleLock = ({ slot, lock }) => {
+    // save lock and slot locally
+    setLockedSlot({ slot, lock });
+    setLockInfo(lock || null);
+    setAvailabilityOpen(false);
+    // show user
+    alert(`Slot locked until ${lock?.expiresAt || "a short time"}. Proceed to confirm booking.`);
+  };
+
+  // submit booking (pay later / on-submit)
   const submitBooking = async (e) => {
     e.preventDefault();
     setError("");
     setSuccessMsg("");
+
     const v = validate();
     if (v) { setError(v); return; }
 
-    // date/time sanity
+    // ensure future date/time
     const selectedDateTime = new Date(`${date}T${time}:00`);
     if (selectedDateTime < new Date()) {
       setError("Please choose a future date/time.");
       return;
     }
 
-    // store contact locally for convenience
+    // store contact locally
     localStorage.setItem("user_name", name);
     localStorage.setItem("user_phone", phone);
     localStorage.setItem("user_email", email);
 
+    // build booking payload; include lockToken if present
     const payload = {
       serviceId: service?._id || null,
       serviceTitle: service?.title || "",
-      providerName: service?.providerName || "",
+      providerId: service?.providerId || service?.provider?._id || service?.providerId || null,
+      providerName: service?.providerName || service?.provider?.name || "",
       date,
       time,
       customer: { name, phone, email },
       notes,
       price: service?.price ?? null,
+      slotLock: lockInfo ? { lockToken: lockInfo.lockToken, expiresAt: lockInfo.expiresAt } : null,
     };
 
     setLoading(true);
     try {
-      const res = await axios.post("http://localhost:5000/bookings", payload, { timeout: 10000 });
+      // POST booking
+      const res = await api.post("/bookings", payload, { timeout: 15000 });
       setLoading(false);
 
-      // success handling: save booking and redirect to confirmation page
+      // success handling: cache and redirect to confirmation
       const created = res?.data || {};
-      // cache for fallback
-      try {
-        localStorage.setItem("last_booking", JSON.stringify(created));
-      } catch (err) {
-        // ignore localStorage errors
-      }
-
+      try { localStorage.setItem("last_booking", JSON.stringify(created)); } catch {}
       const bid = created._id || created.bookingId || created.id;
       if (bid) {
-        // redirect to confirmation with booking id
         window.location.href = `/booking/confirmation?bookingId=${bid}`;
       } else {
-        // fallback: redirect without id (confirmation page will read localStorage)
         window.location.href = `/booking/confirmation`;
       }
     } catch (err) {
       console.error("Booking failed:", err);
       setLoading(false);
+      // show server message if available
       setError(err?.response?.data?.message || "Booking failed — please try again.");
     }
   };
+
+  // optional: startRazorpay function if you want pay-now flow (left out here for brevity)
+  // you can keep your existing Razorpay helper and call it after lock verification if desired.
 
   const priceDisplay = useMemo(() => {
     if (!service) return "—";
@@ -226,24 +247,36 @@ export default function Booking() {
             <div className="mt-4">
               <div className="text-xs text-slate-500">Payment</div>
               <div className="mt-2 flex gap-2">
+                {/* Pay now can be wired to Razorpay helper if you want */}
                 <button
                   className="flex-1 py-2 rounded-md bg-slate-50 border border-slate-200 text-sm"
-                  onClick={() => alert("Payment integration placeholder — replace with Razorpay/PayPal flow.")}
+                  onClick={() => setAvailabilityOpen(true)}
                 >
-                  Pay now (demo)
+                  Check availability
                 </button>
+
                 <button
                   className="py-2 px-3 rounded-md bg-white border border-slate-200 text-sm"
-                  onClick={() => alert("Payment later selected — booking will proceed without payment in demo.")}
+                  onClick={() => alert("Pay later selected — booking will proceed without payment in demo.")}
                 >
                   Pay later
                 </button>
               </div>
             </div>
+
+            {lockInfo && (
+              <div className="mt-4 p-3 rounded-md bg-emerald-50 border border-emerald-100 text-emerald-800 text-sm">
+                <div><strong>Slot locked</strong> — expires: {lockInfo.expiresAt ? new Date(lockInfo.expiresAt).toLocaleString() : "soon"}</div>
+                <div className="text-xs text-slate-600 mt-1">You may complete booking to reserve this slot.</div>
+                <div className="mt-2 flex gap-2">
+                  <button onClick={() => setLockInfo(null)} className="px-3 py-1 border rounded text-sm">Release</button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-4 text-sm text-slate-500">
-            <strong>Notes:</strong> The booking will be confirmed after provider accepts (demo). Replace the payment button with a real gateway for live transactions.
+            <strong>Notes:</strong> Locking a slot is a temporary reservation. Backend should verify the `slotLock.lockToken` when creating booking to finalize it.
           </div>
         </aside>
 
@@ -330,6 +363,28 @@ export default function Booking() {
           </div>
         </div>
       </div>
+
+      {/* Availability modal */}
+      {availabilityOpen && service && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setAvailabilityOpen(false)} />
+          <div className="bg-white rounded-xl shadow p-6 max-w-3xl w-full z-10">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="font-semibold text-lg">Check availability — {service.title}</div>
+                <div className="text-sm text-slate-500">Choose a slot and lock it while you complete booking</div>
+              </div>
+              <button className="px-3 py-1 border rounded" onClick={() => setAvailabilityOpen(false)}>Close</button>
+            </div>
+
+            <AvailabilityManager
+              providerId={service?.providerId || service?.provider?._id || service?.providerId}
+              serviceId={service._id}
+              onLock={handleLock}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
