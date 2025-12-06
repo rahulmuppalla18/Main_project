@@ -1,16 +1,53 @@
-# React + Vite
+# Main Project
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Overview
+The **Main Project** is a web-based application designed to manage service bookings and availability. It features a **frontend** built with modern JavaScript frameworks and a **backend** (to be implemented) for handling business logic and database operations. The project aims to provide a seamless experience for service providers and customers.
 
-Currently, two official plugins are available:
+## Features
+- **Frontend**:
+  - User-friendly interface for booking services.
+  - Availability management for service providers.
+  - Authentication system for users (login, signup).
+  - Responsive design for mobile and desktop.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Backend** (Planned):
+  - RESTful API for managing services, bookings, and users.
+  - Database integration for persistent data storage.
+  - Secure authentication and authorization.
 
-## React Compiler
+## Frontend Structure
+The frontend is organized as follows:
+- **Components**: Reusable UI components like `Navbar`, `ServiceCard`, and `AvailabilityManager`.
+- **Pages**: Views for different routes, such as `Home`, `Login`, and `ProviderDashboard`.
+- **Contexts**: Context API for managing global state, such as authentication.
+- **API Integration**: Handles communication with the backend.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## How to Run the Frontend
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/rahulmuppalla18/Main_project.git
+   cd Main_project/frontend
+   ```
 
-## Expanding the ESLint configuration
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+4. Open the app in your browser at `http://localhost:5173`.
+
+## Future Enhancements
+- Implement the backend with database support.
+- Add real-time notifications for bookings.
+- Enhance the UI with additional features like analytics and reporting.
+
+## Contributing
+Contributions are welcome! Feel free to fork the repository and submit a pull request.
+
+## License
+This project is licensed under the [MIT License](LICENSE).
